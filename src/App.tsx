@@ -1,10 +1,21 @@
 import { BarChart3, LayoutDashboard, ReceiptText } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ModeSelection } from "./components/ModeSelection";
+import { UserSwitcher } from "./components/UserSwitcher";
 import { DashboardPage } from "./pages/DashboardPage";
+import { ServerModePage } from "./pages/ServerModePage";
 import { StatisticsPage } from "./pages/StatisticsPage";
 import { TransactionsPage } from "./pages/TransactionsPage";
 import type { Transaction, TransactionDraft } from "./types/transaction";
-import { loadTransactions, saveTransactions } from "./utils/storage";
+import type { AppSettings, LocalUser, StorageMode } from "./types/user";
+import {
+  loadSettings,
+  loadTransactions,
+  loadUsers,
+  saveSettings,
+  saveTransactions,
+  saveUsers,
+} from "./utils/storage";
 
 type Page = "dashboard" | "transactions" | "statistics";
 
@@ -28,13 +39,44 @@ const createId = (): string => {
 
 function App() {
   const [page, setPage] = useState<Page>("dashboard");
-  const [transactions, setTransactions] = useState<Transaction[]>(() =>
-    loadTransactions(),
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const [users, setUsers] = useState<LocalUser[]>(() => loadUsers());
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
+
+  const activeUser = useMemo(
+    () => users.find((user) => user.id === settings.activeUserId) ?? null,
+    [settings.activeUserId, users],
   );
 
+  const mode: StorageMode | undefined = settings.mode;
+
   useEffect(() => {
-    saveTransactions(transactions);
-  }, [transactions]);
+    saveSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    saveUsers(users);
+  }, [users]);
+
+  useEffect(() => {
+    if (!activeUser || mode !== "local") {
+      setTransactions([]);
+      setLoadedUserId(null);
+      return;
+    }
+
+    setTransactions(loadTransactions(activeUser.id));
+    setLoadedUserId(activeUser.id);
+  }, [activeUser, mode]);
+
+  useEffect(() => {
+    if (!activeUser || mode !== "local" || loadedUserId !== activeUser.id) {
+      return;
+    }
+
+    saveTransactions(activeUser.id, transactions);
+  }, [activeUser, loadedUserId, mode, transactions]);
 
   const pageTitle = useMemo(() => {
     switch (page) {
@@ -78,6 +120,77 @@ function App() {
     );
   };
 
+  const activateLocalMode = (activeUserId: string) => {
+    setSettings({
+      mode: "local",
+      activeUserId,
+    });
+    setPage("dashboard");
+  };
+
+  const createUser = (name: string, kind: LocalUser["kind"] = "local") => {
+    const now = new Date().toISOString();
+    const user: LocalUser = {
+      id: createId(),
+      name,
+      kind,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    setUsers((current) => [...current, user]);
+    activateLocalMode(user.id);
+  };
+
+  const useGuest = () => {
+    const existingGuest = users.find((user) => user.kind === "guest");
+    if (existingGuest) {
+      activateLocalMode(existingGuest.id);
+      return;
+    }
+
+    createUser("游客账本", "guest");
+  };
+
+  const switchUser = (userId: string) => {
+    if (!userId) {
+      setSettings({
+        mode: "local",
+        activeUserId: undefined,
+      });
+      return;
+    }
+
+    activateLocalMode(userId);
+  };
+
+  if (mode === "server") {
+    return (
+      <div className="min-h-screen bg-[#f7f5f0] text-slate-900">
+        <ServerModePage
+          onBackToLocal={() =>
+            setSettings({
+              mode: "local",
+              activeUserId: activeUser?.id,
+            })
+          }
+        />
+      </div>
+    );
+  }
+
+  if (mode !== "local" || !activeUser) {
+    return (
+      <div className="min-h-screen bg-[#f7f5f0] text-slate-900">
+        <ModeSelection
+          onUseGuest={useGuest}
+          onCreateUser={(name) => createUser(name)}
+          onSelectServerMode={() => setSettings({ mode: "server" })}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f7f5f0] text-slate-900">
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -113,7 +226,20 @@ function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+        <UserSwitcher
+          activeUser={activeUser}
+          users={users}
+          onSwitchUser={switchUser}
+          onCreateUser={(name) => createUser(name)}
+          onUseGuest={useGuest}
+          onOpenServerMode={() =>
+            setSettings({
+              mode: "server",
+              activeUserId: activeUser.id,
+            })
+          }
+        />
         {page === "dashboard" ? (
           <DashboardPage
             transactions={transactions}

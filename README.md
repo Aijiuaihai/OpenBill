@@ -1,9 +1,26 @@
 # OpenBill
 
-OpenBill 是一个前端单机版个人记账程序 MVP。它使用浏览器 localStorage 保存数据，适合快速记录收入、支出、资金渠道，并查看本月和总体统计。
+OpenBill 是一个简洁、实用、可扩展的个人记账程序 MVP。当前版本以前端单机版为主，支持本地模式、游客模式、本地用户档案、账单管理和基础统计。
+
+## 当前数据存储
+
+当前版本没有使用数据库，也没有后端服务。
+
+本地模式的数据保存在浏览器 `localStorage` 中，主要 key 包括：
+
+- `openbill_settings`：应用模式和当前用户
+- `openbill_users`：本地用户和游客档案
+- `openbill_transactions_by_user`：按用户 ID 隔离保存的账单数据
+- `openbill_transactions`：旧版本账单 key，首次进入新版本时会迁移到当前用户
+
+浏览器清理站点数据、更换浏览器或更换设备都会导致本地数据不可见。未来服务器模式可以按 `docs/database-design.md` 的结构接入数据库。
 
 ## 功能特性
 
+- 本地模式：数据只保存在当前浏览器
+- 服务器模式：暂未接入后端，预留未来联网部署入口
+- 游客模式：无需创建用户也可以记账
+- 本地用户档案：可创建多个本地用户，账单按用户隔离
 - 新增收入和支出账单
 - 编辑已有账单并自动更新修改时间
 - 删除账单前确认
@@ -46,11 +63,14 @@ npm run build
 ## 项目目录结构
 
 ```text
+docs/
+  database-design.md
 src/
   main.tsx
   App.tsx
   types/
     transaction.ts
+    user.ts
   data/
     constants.ts
   utils/
@@ -58,6 +78,8 @@ src/
     statistics.ts
     format.ts
   components/
+    ModeSelection.tsx
+    UserSwitcher.tsx
     TransactionForm.tsx
     TransactionList.tsx
     TransactionItem.tsx
@@ -69,7 +91,21 @@ src/
     DashboardPage.tsx
     TransactionsPage.tsx
     StatisticsPage.tsx
+    ServerModePage.tsx
 ```
+
+## 未来服务器模式设计
+
+服务器模式未来可以扩展为：
+
+- 用户注册和登录
+- 后端数据库
+- 多设备同步
+- 游客数据迁移到正式账号
+- 服务端账单导入和导出
+- 权限控制和会话管理
+
+数据库草案见 [docs/database-design.md](docs/database-design.md)。
 
 ## 后续扩展方向
 

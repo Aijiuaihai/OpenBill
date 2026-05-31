@@ -1,6 +1,10 @@
 import type { Transaction } from "../types/transaction";
+import type { AppSettings, LocalUser } from "../types/user";
 
-const STORAGE_KEY = "openbill_transactions";
+const LEGACY_TRANSACTIONS_KEY = "openbill_transactions";
+const SETTINGS_KEY = "openbill_settings";
+const USERS_KEY = "openbill_users";
+const TRANSACTIONS_BY_USER_KEY = "openbill_transactions_by_user";
 
 const isTransaction = (value: unknown): value is Transaction => {
   if (!value || typeof value !== "object") {
@@ -20,24 +24,131 @@ const isTransaction = (value: unknown): value is Transaction => {
   );
 };
 
-export const loadTransactions = (): Transaction[] => {
+const readJson = <T>(key: string, fallback: T): T => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) {
-      return [];
+      return fallback;
     }
 
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.filter(isTransaction);
+    return JSON.parse(raw) as T;
   } catch {
-    return [];
+    return fallback;
   }
 };
 
-export const saveTransactions = (transactions: Transaction[]): void => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+const writeJson = <T>(key: string, value: T): void => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
+
+const loadLegacyTransactions = (): Transaction[] => {
+  const parsed = readJson<unknown>(LEGACY_TRANSACTIONS_KEY, []);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed.filter(isTransaction);
+};
+
+const loadTransactionsByUser = (): Record<string, Transaction[]> => {
+  const parsed = readJson<unknown>(TRANSACTIONS_BY_USER_KEY, {});
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+
+  const result: Record<string, Transaction[]> = {};
+  for (const [userId, transactions] of Object.entries(parsed)) {
+    if (Array.isArray(transactions)) {
+      result[userId] = transactions.filter(isTransaction);
+    }
+  }
+
+  return result;
+};
+
+export const loadSettings = (): AppSettings =>
+  readJson<AppSettings>(SETTINGS_KEY, {});
+
+export const saveSettings = (settings: AppSettings): void => {
+  writeJson(SETTINGS_KEY, settings);
+};
+
+const isLocalUser = (value: unknown): value is LocalUser => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const user = value as Record<string, unknown>;
+  return (
+    typeof user.id === "string" &&
+    typeof user.name === "string" &&
+    (user.kind === "guest" || user.kind === "local") &&
+    typeof user.createdAt === "string" &&
+    typeof user.updatedAt === "string"
+  );
+};
+
+export const loadUsers = (): LocalUser[] => {
+  const parsed = readJson<unknown>(USERS_KEY, []);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  return parsed.filter(isLocalUser);
+};
+
+export const saveUsers = (users: LocalUser[]): void => {
+  writeJson(USERS_KEY, users);
+};
+
+export const loadTransactions = (userId: string): Transaction[] => {
+  const byUser = loadTransactionsByUser();
+  const userTransactions = byUser[userId];
+
+  if (userTransactions) {
+    return userTransactions;
+  }
+
+  const legacyTransactions = loadLegacyTransactions();
+  if (legacyTransactions.length > 0) {
+    byUser[userId] = legacyTransactions;
+    writeJson(TRANSACTIONS_BY_USER_KEY, byUser);
+    return legacyTransactions;
+  }
+
+  return [];
+};
+
+export const saveTransactions = (
+  userId: string,
+  transactions: Transaction[],
+): void => {
+  const byUser = loadTransactionsByUser();
+  byUser[userId] = transactions;
+  writeJson(TRANSACTIONS_BY_USER_KEY, byUser);
+};
+
+export const clearActiveUser = (): void => {
+  const settings = loadSettings();
+  saveSettings({
+    ...settings,
+    activeUserId: undefined,
+  });
+};
+
+export const deleteUserData = (userId: string): void => {
+  const users = loadUsers().filter((user) => user.id !== userId);
+  const byUser = loadTransactionsByUser();
+  delete byUser[userId];
+
+  saveUsers(users);
+  writeJson(TRANSACTIONS_BY_USER_KEY, byUser);
+
+  const settings = loadSettings();
+  if (settings.activeUserId === userId) {
+    saveSettings({
+      ...settings,
+      activeUserId: users[0]?.id,
+    });
+  }
 };
