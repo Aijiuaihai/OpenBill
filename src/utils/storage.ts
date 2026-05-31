@@ -1,10 +1,14 @@
 import type { Transaction } from "../types/transaction";
 import type { AppSettings, LocalUser } from "../types/user";
+import { invoke } from "@tauri-apps/api/core";
 
 const LEGACY_TRANSACTIONS_KEY = "openbill_transactions";
 const SETTINGS_KEY = "openbill_settings";
 const USERS_KEY = "openbill_users";
 const TRANSACTIONS_BY_USER_KEY = "openbill_transactions_by_user";
+
+const isTauriRuntime = (): boolean =>
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 const isTransaction = (value: unknown): value is Transaction => {
   if (!value || typeof value !== "object") {
@@ -66,10 +70,34 @@ const loadTransactionsByUser = (): Record<string, Transaction[]> => {
   return result;
 };
 
-export const loadSettings = (): AppSettings =>
-  readJson<AppSettings>(SETTINGS_KEY, {});
+const invokeOrFallback = async <T>(
+  command: string,
+  args: Record<string, unknown>,
+  fallback: () => T,
+): Promise<T> => {
+  if (!isTauriRuntime()) {
+    return fallback();
+  }
 
-export const saveSettings = (settings: AppSettings): void => {
+  try {
+    return await invoke<T>(command, args);
+  } catch (error) {
+    console.error(`Tauri command failed: ${command}`, error);
+    return fallback();
+  }
+};
+
+export const loadSettings = async (): Promise<AppSettings> =>
+  invokeOrFallback("load_settings", {}, () =>
+    readJson<AppSettings>(SETTINGS_KEY, {}),
+  );
+
+export const saveSettings = async (settings: AppSettings): Promise<void> => {
+  if (isTauriRuntime()) {
+    await invoke("save_settings", { settings });
+    return;
+  }
+
   writeJson(SETTINGS_KEY, settings);
 };
 
@@ -88,7 +116,7 @@ const isLocalUser = (value: unknown): value is LocalUser => {
   );
 };
 
-export const loadUsers = (): LocalUser[] => {
+const loadUsersFromLocalStorage = (): LocalUser[] => {
   const parsed = readJson<unknown>(USERS_KEY, []);
   if (!Array.isArray(parsed)) {
     return [];
@@ -97,11 +125,19 @@ export const loadUsers = (): LocalUser[] => {
   return parsed.filter(isLocalUser);
 };
 
-export const saveUsers = (users: LocalUser[]): void => {
+export const loadUsers = async (): Promise<LocalUser[]> =>
+  invokeOrFallback("load_users", {}, loadUsersFromLocalStorage);
+
+export const saveUsers = async (users: LocalUser[]): Promise<void> => {
+  if (isTauriRuntime()) {
+    await invoke("save_users", { users });
+    return;
+  }
+
   writeJson(USERS_KEY, users);
 };
 
-export const loadTransactions = (userId: string): Transaction[] => {
+const loadTransactionsFromLocalStorage = (userId: string): Transaction[] => {
   const byUser = loadTransactionsByUser();
   const userTransactions = byUser[userId];
 
@@ -119,34 +155,46 @@ export const loadTransactions = (userId: string): Transaction[] => {
   return [];
 };
 
-export const saveTransactions = (
+export const loadTransactions = async (
+  userId: string,
+): Promise<Transaction[]> =>
+  invokeOrFallback("load_transactions", { userId }, () =>
+    loadTransactionsFromLocalStorage(userId),
+  );
+
+export const saveTransactions = async (
   userId: string,
   transactions: Transaction[],
-): void => {
+): Promise<void> => {
+  if (isTauriRuntime()) {
+    await invoke("save_transactions", { userId, transactions });
+    return;
+  }
+
   const byUser = loadTransactionsByUser();
   byUser[userId] = transactions;
   writeJson(TRANSACTIONS_BY_USER_KEY, byUser);
 };
 
-export const clearActiveUser = (): void => {
-  const settings = loadSettings();
+export const clearActiveUser = async (): Promise<void> => {
+  const settings = await loadSettings();
   saveSettings({
     ...settings,
     activeUserId: undefined,
   });
 };
 
-export const deleteUserData = (userId: string): void => {
-  const users = loadUsers().filter((user) => user.id !== userId);
+export const deleteUserData = async (userId: string): Promise<void> => {
+  const users = loadUsersFromLocalStorage().filter((user) => user.id !== userId);
   const byUser = loadTransactionsByUser();
   delete byUser[userId];
 
-  saveUsers(users);
+  await saveUsers(users);
   writeJson(TRANSACTIONS_BY_USER_KEY, byUser);
 
-  const settings = loadSettings();
+  const settings = await loadSettings();
   if (settings.activeUserId === userId) {
-    saveSettings({
+    await saveSettings({
       ...settings,
       activeUserId: users[0]?.id,
     });

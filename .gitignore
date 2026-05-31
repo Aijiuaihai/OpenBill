@@ -12,3 +12,7 @@ pnpm-debug.log*
 .idea/
 .npm-cache/
 .npm-dev*.log
+src-tauri/target/
+*.sqlite
+*.sqlite3
+*.db

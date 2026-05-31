@@ -39,10 +39,11 @@ const createId = (): string => {
 
 function App() {
   const [page, setPage] = useState<Page>("dashboard");
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
-  const [users, setUsers] = useState<LocalUser[]>(() => loadUsers());
+  const [settings, setSettings] = useState<AppSettings>({});
+  const [users, setUsers] = useState<LocalUser[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
+  const [isStoreReady, setIsStoreReady] = useState(false);
 
   const activeUser = useMemo(
     () => users.find((user) => user.id === settings.activeUserId) ?? null,
@@ -52,22 +53,75 @@ function App() {
   const mode: StorageMode | undefined = settings.mode;
 
   useEffect(() => {
-    saveSettings(settings);
-  }, [settings]);
+    let cancelled = false;
+
+    const initializeStore = async () => {
+      const [storedSettings, storedUsers] = await Promise.all([
+        loadSettings(),
+        loadUsers(),
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSettings(storedSettings);
+      setUsers(storedUsers);
+      setIsStoreReady(true);
+    };
+
+    initializeStore();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    saveUsers(users);
-  }, [users]);
-
-  useEffect(() => {
-    if (!activeUser || mode !== "local") {
-      setTransactions([]);
-      setLoadedUserId(null);
+    if (!isStoreReady) {
       return;
     }
 
-    setTransactions(loadTransactions(activeUser.id));
-    setLoadedUserId(activeUser.id);
+    saveSettings(settings).catch((error) => {
+      console.error("Failed to save settings", error);
+    });
+  }, [isStoreReady, settings]);
+
+  useEffect(() => {
+    if (!isStoreReady) {
+      return;
+    }
+
+    saveUsers(users).catch((error) => {
+      console.error("Failed to save users", error);
+    });
+  }, [isStoreReady, users]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!activeUser || mode !== "local") {
+      setTransactions([]);
+      setLoadedUserId(null);
+      return undefined;
+    }
+
+    loadTransactions(activeUser.id)
+      .then((storedTransactions) => {
+        if (cancelled) {
+          return;
+        }
+
+        setTransactions(storedTransactions);
+        setLoadedUserId(activeUser.id);
+      })
+      .catch((error) => {
+        console.error("Failed to load transactions", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeUser, mode]);
 
   useEffect(() => {
@@ -75,7 +129,9 @@ function App() {
       return;
     }
 
-    saveTransactions(activeUser.id, transactions);
+    saveTransactions(activeUser.id, transactions).catch((error) => {
+      console.error("Failed to save transactions", error);
+    });
   }, [activeUser, loadedUserId, mode, transactions]);
 
   const pageTitle = useMemo(() => {
@@ -175,6 +231,14 @@ function App() {
             })
           }
         />
+      </div>
+    );
+  }
+
+  if (!isStoreReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f5f0] px-4 text-slate-600">
+        正在加载 OpenBill...
       </div>
     );
   }

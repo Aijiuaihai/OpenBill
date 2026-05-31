@@ -1,6 +1,8 @@
 # OpenBill 数据库设计草案
 
-当前 MVP 没有连接数据库。本文件用于未来服务器模式实现时参考，推荐使用 PostgreSQL，也可以按同样结构迁移到 MySQL 或 SQLite。
+当前主分支 MVP 没有连接服务器数据库。本文件用于未来服务器模式实现时参考，推荐使用 PostgreSQL，也可以按同样结构迁移到 MySQL。
+
+桌面分支的本地 SQLite 是单机持久化方案，表结构更轻，见 `docs/desktop-architecture.md`。
 
 ## 设计目标
 
@@ -107,7 +109,7 @@ CREATE INDEX idx_transactions_user_category ON transactions(user_id, category_id
 
 ## 暂不实现的内容
 
-- 当前 MVP 不连接数据库
+- 主分支浏览器 MVP 不连接数据库
 - 当前 MVP 不实现后端 API
 - 当前 MVP 不上传本地账单
 - 当前服务器模式只是产品入口和技术预留
