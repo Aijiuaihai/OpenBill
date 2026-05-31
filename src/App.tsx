@@ -1,5 +1,6 @@
 import { BarChart3, LayoutDashboard, ReceiptText } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataTools } from "./components/DataTools";
 import { ModeSelection } from "./components/ModeSelection";
 import { UserSwitcher } from "./components/UserSwitcher";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -7,8 +8,12 @@ import { ServerModePage } from "./pages/ServerModePage";
 import { StatisticsPage } from "./pages/StatisticsPage";
 import { TransactionsPage } from "./pages/TransactionsPage";
 import type { Transaction, TransactionDraft } from "./types/transaction";
+import type { OpenBillBackup } from "./types/backup";
 import type { AppSettings, LocalUser, StorageMode } from "./types/user";
 import {
+  exportBackup,
+  getStorageBackend,
+  importBackup,
   loadSettings,
   loadTransactions,
   loadUsers,
@@ -51,23 +56,27 @@ function App() {
   );
 
   const mode: StorageMode | undefined = settings.mode;
+  const storageBackend = getStorageBackend();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const initializeStore = async () => {
+  const reloadStore = useCallback(async () => {
       const [storedSettings, storedUsers] = await Promise.all([
         loadSettings(),
         loadUsers(),
       ]);
 
-      if (cancelled) {
-        return;
-      }
-
       setSettings(storedSettings);
       setUsers(storedUsers);
       setIsStoreReady(true);
+    }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const initializeStore = async () => {
+      await reloadStore();
+      if (cancelled) {
+        return;
+      }
     };
 
     initializeStore();
@@ -75,7 +84,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadStore]);
 
   useEffect(() => {
     if (!isStoreReady) {
@@ -220,6 +229,16 @@ function App() {
     activateLocalMode(userId);
   };
 
+  const handleImportBackup = async (backup: OpenBillBackup) => {
+    await importBackup(backup);
+    await reloadStore();
+    const nextSettings = await loadSettings();
+    if (nextSettings.activeUserId) {
+      setTransactions(await loadTransactions(nextSettings.activeUserId));
+      setLoadedUserId(nextSettings.activeUserId);
+    }
+  };
+
   if (mode === "server") {
     return (
       <div className="min-h-screen bg-[#f7f5f0] text-slate-900">
@@ -303,6 +322,11 @@ function App() {
               activeUserId: activeUser.id,
             })
           }
+        />
+        <DataTools
+          backend={storageBackend}
+          onExport={exportBackup}
+          onImport={handleImportBackup}
         />
         {page === "dashboard" ? (
           <DashboardPage

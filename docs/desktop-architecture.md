@@ -23,6 +23,11 @@ src/utils/storage.ts
   +-- Browser runtime: localStorage fallback
 ```
 
+同一存储层还提供完整备份能力：
+
+- `exportBackup()`：导出设置、用户和全部账单
+- `importBackup()`：导入备份并覆盖当前本地数据
+
 ## SQLite 位置
 
 Tauri 模式下数据库文件由后端写入系统应用数据目录：
@@ -54,3 +59,11 @@ Windows 上通常位于用户 AppData 目录下的 OpenBill 应用数据目录�
 - 冲突解决策略
 
 建议保持前端继续依赖统一存储接口，不要让页面组件直接调用 Tauri command 或远程 API。
+
+## 下一步建议
+
+- 安装 Rust 和 MSVC Build Tools 后运行 `npm run tauri:dev`
+- 在真实 Tauri 窗口中验证 SQLite 数据库读写
+- 给备份导入增加 schema 校验和错误详情
+- 增加数据导出 Excel
+- 为云同步预留本地变更日志表

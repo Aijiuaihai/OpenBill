@@ -1,5 +1,6 @@
 import type { Transaction } from "../types/transaction";
 import type { AppSettings, LocalUser } from "../types/user";
+import type { OpenBillBackup } from "../types/backup";
 import { invoke } from "@tauri-apps/api/core";
 
 const LEGACY_TRANSACTIONS_KEY = "openbill_transactions";
@@ -7,8 +8,11 @@ const SETTINGS_KEY = "openbill_settings";
 const USERS_KEY = "openbill_users";
 const TRANSACTIONS_BY_USER_KEY = "openbill_transactions_by_user";
 
-const isTauriRuntime = (): boolean =>
+export const isTauriRuntime = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+export const getStorageBackend = (): "sqlite" | "localStorage" =>
+  isTauriRuntime() ? "sqlite" : "localStorage";
 
 const isTransaction = (value: unknown): value is Transaction => {
   if (!value || typeof value !== "object") {
@@ -68,6 +72,12 @@ const loadTransactionsByUser = (): Record<string, Transaction[]> => {
   }
 
   return result;
+};
+
+const saveTransactionsByUser = (
+  transactionsByUser: Record<string, Transaction[]>,
+): void => {
+  writeJson(TRANSACTIONS_BY_USER_KEY, transactionsByUser);
 };
 
 const invokeOrFallback = async <T>(
@@ -199,4 +209,30 @@ export const deleteUserData = async (userId: string): Promise<void> => {
       activeUserId: users[0]?.id,
     });
   }
+};
+
+const exportBackupFromLocalStorage = (): OpenBillBackup => ({
+  version: 1,
+  exportedAt: new Date().toISOString(),
+  settings: readJson<AppSettings>(SETTINGS_KEY, {}),
+  users: loadUsersFromLocalStorage(),
+  transactionsByUser: loadTransactionsByUser(),
+});
+
+export const exportBackup = async (): Promise<OpenBillBackup> =>
+  invokeOrFallback("export_backup", {}, exportBackupFromLocalStorage);
+
+export const importBackup = async (backup: OpenBillBackup): Promise<void> => {
+  if (backup.version !== 1) {
+    throw new Error("不支持的备份版本。");
+  }
+
+  if (isTauriRuntime()) {
+    await invoke("import_backup", { backup });
+    return;
+  }
+
+  writeJson(SETTINGS_KEY, backup.settings);
+  writeJson(USERS_KEY, backup.users);
+  saveTransactionsByUser(backup.transactionsByUser);
 };

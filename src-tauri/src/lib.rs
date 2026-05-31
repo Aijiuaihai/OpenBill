@@ -36,6 +36,16 @@ struct Transaction {
     updated_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Backup {
+    version: u8,
+    exported_at: String,
+    settings: AppSettings,
+    users: Vec<LocalUser>,
+    transactions_by_user: std::collections::HashMap<String, Vec<Transaction>>,
+}
+
 fn database_path(app: &AppHandle) -> Result<PathBuf, String> {
     let app_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
     fs::create_dir_all(&app_dir).map_err(|error| error.to_string())?;
@@ -249,7 +259,15 @@ fn save_transactions(
 ) -> Result<(), String> {
     let mut conn = connection(&app)?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
-    tx.execute("DELETE FROM transactions WHERE user_id = ?1", params![user_id])
+    tx.execute(
+        "
+        INSERT OR IGNORE INTO users (id, name, kind, created_at, updated_at)
+        VALUES (?1, '本地账本', 'local', datetime('now'), datetime('now'))
+        ",
+        params![&user_id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM transactions WHERE user_id = ?1", params![&user_id])
         .map_err(|error| error.to_string())?;
 
     for transaction in transactions {
@@ -279,6 +297,98 @@ fn save_transactions(
     tx.commit().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn export_backup(app: AppHandle) -> Result<Backup, String> {
+    let users = load_users(app.clone())?;
+    let settings = load_settings(app.clone())?;
+    let mut transactions_by_user = std::collections::HashMap::new();
+
+    for user in &users {
+        transactions_by_user.insert(user.id.clone(), load_transactions(app.clone(), user.id.clone())?);
+    }
+
+    Ok(Backup {
+        version: 1,
+        exported_at: chrono_like_timestamp(),
+        settings,
+        users,
+        transactions_by_user,
+    })
+}
+
+#[tauri::command]
+fn import_backup(app: AppHandle, backup: Backup) -> Result<(), String> {
+    if backup.version != 1 {
+        return Err("Unsupported backup version".to_string());
+    }
+
+    let mut conn = connection(&app)?;
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM transactions", [])
+        .map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM users", [])
+        .map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM settings", [])
+        .map_err(|error| error.to_string())?;
+
+    let settings_value = serde_json::to_string(&backup.settings).map_err(|error| error.to_string())?;
+    tx.execute(
+        "INSERT INTO settings (key, value) VALUES ('app', ?1)",
+        params![settings_value],
+    )
+    .map_err(|error| error.to_string())?;
+
+    for user in backup.users {
+        tx.execute(
+            "
+            INSERT INTO users (id, name, kind, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ",
+            params![user.id, user.name, user.kind, user.created_at, user.updated_at],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+
+    for (user_id, transactions) in backup.transactions_by_user {
+        for transaction in transactions {
+            tx.execute(
+                "
+                INSERT INTO transactions (
+                  id, user_id, amount, type, category, channel, note, date, created_at, updated_at
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                ",
+                params![
+                    transaction.id,
+                    &user_id,
+                    transaction.amount,
+                    transaction.transaction_type,
+                    transaction.category,
+                    transaction.channel,
+                    transaction.note,
+                    transaction.date,
+                    transaction.created_at,
+                    transaction.updated_at
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+
+    tx.commit().map_err(|error| error.to_string())
+}
+
+fn chrono_like_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+
+    format!("{seconds}")
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -287,7 +397,9 @@ pub fn run() {
             load_users,
             save_users,
             load_transactions,
-            save_transactions
+            save_transactions,
+            export_backup,
+            import_backup
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenBill");
