@@ -305,6 +305,7 @@ function App() {
       <div className="min-h-screen bg-[#f7f5f0] text-slate-900">
         <ModeSelection
           users={users}
+          storageBackend={storageBackend}
           onSelectUser={activateLocalMode}
           onDeleteUser={(userId) => {
             deleteUser(userId).catch((error) => {

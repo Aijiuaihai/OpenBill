@@ -4,6 +4,7 @@ import { getUserDisplayName } from "../utils/users";
 
 interface ModeSelectionProps {
   users: LocalUser[];
+  storageBackend: "sqlite" | "localStorage";
   onSelectUser: (userId: string) => void;
   onDeleteUser: (userId: string) => void;
   onUseGuest: () => void;
@@ -14,6 +15,7 @@ interface ModeSelectionProps {
 
 export function ModeSelection({
   users,
+  storageBackend,
   onSelectUser,
   onDeleteUser,
   onUseGuest,
@@ -21,6 +23,13 @@ export function ModeSelection({
   onSelectServerMode,
   error,
 }: ModeSelectionProps) {
+  const storageLabel =
+    storageBackend === "sqlite" ? "SQLite 本地数据库" : "浏览器 localStorage";
+  const storageDescription =
+    storageBackend === "sqlite"
+      ? "当前运行在桌面端，本地模式会把账单保存到本机 SQLite 数据库。"
+      : "当前运行在浏览器中，本地模式会把账单保存到当前浏览器的 localStorage。";
+
   const handleCreateUser = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -39,8 +48,11 @@ export function ModeSelection({
         <div>
           <h1 className="text-3xl font-semibold text-slate-950">OpenBill</h1>
           <p className="mt-2 max-w-2xl text-slate-600">
-            请选择数据模式。本地模式会把账单保存到当前浏览器的 localStorage；
+            请选择数据模式。{storageDescription}
             服务器模式暂未接入后端，当前仅保留未来联网部署入口。
+          </p>
+          <p className="mt-3 inline-flex rounded-lg bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-800">
+            当前存储：{storageLabel}
           </p>
         </div>
 
@@ -53,7 +65,7 @@ export function ModeSelection({
               <div>
                 <h2 className="font-semibold text-slate-900">本地模式</h2>
                 <p className="text-sm text-slate-500">
-                  无需登录，适合个人设备离线记账。
+                  无需登录，适合个人设备离线记账。数据写入{storageLabel}。
                 </p>
               </div>
             </div>
