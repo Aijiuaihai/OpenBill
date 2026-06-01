@@ -2,6 +2,7 @@ import type { Transaction } from "../types/transaction";
 import type { AppSettings, LocalUser } from "../types/user";
 import type { OpenBillBackup } from "../types/backup";
 import { invoke } from "@tauri-apps/api/core";
+import { isDuplicateUserName } from "./users";
 
 const LEGACY_TRANSACTIONS_KEY = "openbill_transactions";
 const SETTINGS_KEY = "openbill_settings";
@@ -225,6 +226,12 @@ export const exportBackup = async (): Promise<OpenBillBackup> =>
 export const importBackup = async (backup: OpenBillBackup): Promise<void> => {
   if (backup.version !== 1) {
     throw new Error("不支持的备份版本。");
+  }
+
+  for (const user of backup.users) {
+    if (isDuplicateUserName(backup.users, user.name, user.id)) {
+      throw new Error("备份中存在重复用户名称。");
+    }
   }
 
   if (isTauriRuntime()) {

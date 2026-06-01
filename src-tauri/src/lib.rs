@@ -72,6 +72,7 @@ fn initialize_database(conn: &Connection) -> Result<(), String> {
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           kind TEXT NOT NULL CHECK (kind IN ('guest', 'local')),
+          normalized_name TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -100,7 +101,76 @@ fn initialize_database(conn: &Connection) -> Result<(), String> {
           ON transactions(user_id, category);
         ",
     )
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+
+    ensure_user_normalized_name_column(conn)
+}
+
+fn ensure_user_normalized_name_column(conn: &Connection) -> Result<(), String> {
+    let has_column = conn
+        .prepare("PRAGMA table_info(users)")
+        .map_err(|error| error.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?
+        .iter()
+        .any(|column| column == "normalized_name");
+
+    if !has_column {
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN normalized_name TEXT NOT NULL DEFAULT ''",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+
+    let mut statement = conn
+        .prepare("SELECT id, name FROM users")
+        .map_err(|error| error.to_string())?;
+    let users = statement
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    for (id, name) in users {
+        conn.execute(
+            "UPDATE users SET normalized_name = ?1 WHERE id = ?2",
+            params![normalize_user_name(&name), id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+
+    let _ = conn.execute(
+        "
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_normalized_name
+          ON users(normalized_name)
+        ",
+        [],
+    );
+
+    Ok(())
+}
+
+fn normalize_user_name(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn validate_unique_user_names(users: &[LocalUser]) -> Result<(), String> {
+    let mut names = std::collections::HashSet::new();
+
+    for user in users {
+        let key = normalize_user_name(&user.name);
+        if !names.insert(key) {
+            return Err("Duplicate user name".to_string());
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -168,6 +238,7 @@ fn load_users(app: AppHandle) -> Result<Vec<LocalUser>, String> {
 
 #[tauri::command]
 fn save_users(app: AppHandle, users: Vec<LocalUser>) -> Result<(), String> {
+    validate_unique_user_names(&users)?;
     let mut conn = connection(&app)?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let incoming_ids = users
@@ -196,17 +267,19 @@ fn save_users(app: AppHandle, users: Vec<LocalUser>) -> Result<(), String> {
     for user in users {
         tx.execute(
             "
-            INSERT INTO users (id, name, kind, created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO users (id, name, kind, normalized_name, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             ON CONFLICT(id) DO UPDATE SET
               name = excluded.name,
               kind = excluded.kind,
+              normalized_name = excluded.normalized_name,
               updated_at = excluded.updated_at
             ",
             params![
                 user.id,
                 user.name,
                 user.kind,
+                normalize_user_name(&user.name),
                 user.created_at,
                 user.updated_at
             ],
@@ -261,8 +334,8 @@ fn save_transactions(
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     tx.execute(
         "
-        INSERT OR IGNORE INTO users (id, name, kind, created_at, updated_at)
-        VALUES (?1, '本地账本', 'local', datetime('now'), datetime('now'))
+        INSERT OR IGNORE INTO users (id, name, kind, normalized_name, created_at, updated_at)
+        VALUES (?1, '本地账本', 'local', '本地账本', datetime('now'), datetime('now'))
         ",
         params![&user_id],
     )
@@ -321,6 +394,7 @@ fn import_backup(app: AppHandle, backup: Backup) -> Result<(), String> {
     if backup.version != 1 {
         return Err("Unsupported backup version".to_string());
     }
+    validate_unique_user_names(&backup.users)?;
 
     let mut conn = connection(&app)?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
@@ -341,10 +415,17 @@ fn import_backup(app: AppHandle, backup: Backup) -> Result<(), String> {
     for user in backup.users {
         tx.execute(
             "
-            INSERT INTO users (id, name, kind, created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO users (id, name, kind, normalized_name, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             ",
-            params![user.id, user.name, user.kind, user.created_at, user.updated_at],
+            params![
+                user.id,
+                user.name,
+                user.kind,
+                normalize_user_name(&user.name),
+                user.created_at,
+                user.updated_at
+            ],
         )
         .map_err(|error| error.to_string())?;
     }

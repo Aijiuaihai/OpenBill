@@ -6,9 +6,10 @@ interface UserSwitcherProps {
   activeUser: LocalUser;
   users: LocalUser[];
   onSwitchUser: (userId: string) => void;
-  onCreateUser: (name: string) => void;
+  onCreateUser: (name: string) => boolean;
   onUseGuest: () => void;
   onOpenServerMode: () => void;
+  error?: string;
 }
 
 export function UserSwitcher({
@@ -18,6 +19,7 @@ export function UserSwitcher({
   onCreateUser,
   onUseGuest,
   onOpenServerMode,
+  error,
 }: UserSwitcherProps) {
   const [name, setName] = useState("");
 
@@ -27,8 +29,10 @@ export function UserSwitcher({
       return;
     }
 
-    onCreateUser(trimmedName);
-    setName("");
+    const created = onCreateUser(trimmedName);
+    if (created) {
+      setName("");
+    }
   };
 
   return (
@@ -72,6 +76,11 @@ export function UserSwitcher({
                 <Plus size={18} aria-hidden="true" />
               </button>
             </div>
+            {error ? (
+              <span className="text-xs text-rose-700" role="alert">
+                {error}
+              </span>
+            ) : null}
           </label>
         </div>
 

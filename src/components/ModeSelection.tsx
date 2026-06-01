@@ -2,22 +2,26 @@ import { Cloud, Laptop, UserRound } from "lucide-react";
 
 interface ModeSelectionProps {
   onUseGuest: () => void;
-  onCreateUser: (name: string) => void;
+  onCreateUser: (name: string) => boolean;
   onSelectServerMode: () => void;
+  error?: string;
 }
 
 export function ModeSelection({
   onUseGuest,
   onCreateUser,
   onSelectServerMode,
+  error,
 }: ModeSelectionProps) {
   const handleCreateUser = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const name = String(formData.get("name") ?? "").trim();
     if (name) {
-      onCreateUser(name);
-      event.currentTarget.reset();
+      const created = onCreateUser(name);
+      if (created) {
+        event.currentTarget.reset();
+      }
     }
   };
 
@@ -73,6 +77,11 @@ export function ModeSelection({
                 >
                   创建并进入
                 </button>
+                {error ? (
+                  <p className="text-sm text-rose-700" role="alert">
+                    {error}
+                  </p>
+                ) : null}
               </form>
             </div>
           </section>

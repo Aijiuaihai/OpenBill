@@ -21,6 +21,7 @@ import {
   saveTransactions,
   saveUsers,
 } from "./utils/storage";
+import { isDuplicateUserName, normalizeUserName } from "./utils/users";
 
 type Page = "dashboard" | "transactions" | "statistics";
 
@@ -49,6 +50,7 @@ function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
   const [isStoreReady, setIsStoreReady] = useState(false);
+  const [userError, setUserError] = useState("");
 
   const activeUser = useMemo(
     () => users.find((user) => user.id === settings.activeUserId) ?? null,
@@ -186,6 +188,7 @@ function App() {
   };
 
   const activateLocalMode = (activeUserId: string) => {
+    setUserError("");
     setSettings({
       mode: "local",
       activeUserId,
@@ -194,10 +197,21 @@ function App() {
   };
 
   const createUser = (name: string, kind: LocalUser["kind"] = "local") => {
+    const normalizedName = normalizeUserName(name);
+    if (!normalizedName) {
+      setUserError("请输入用户名称。");
+      return false;
+    }
+
+    if (isDuplicateUserName(users, normalizedName)) {
+      setUserError("该用户名称已存在，请换一个名称。");
+      return false;
+    }
+
     const now = new Date().toISOString();
     const user: LocalUser = {
       id: createId(),
-      name,
+      name: normalizedName,
       kind,
       createdAt: now,
       updatedAt: now,
@@ -205,6 +219,7 @@ function App() {
 
     setUsers((current) => [...current, user]);
     activateLocalMode(user.id);
+    return true;
   };
 
   const useGuest = () => {
@@ -269,6 +284,7 @@ function App() {
           onUseGuest={useGuest}
           onCreateUser={(name) => createUser(name)}
           onSelectServerMode={() => setSettings({ mode: "server" })}
+          error={userError}
         />
       </div>
     );
@@ -322,6 +338,7 @@ function App() {
               activeUserId: activeUser.id,
             })
           }
+          error={userError}
         />
         <DataTools
           backend={storageBackend}
