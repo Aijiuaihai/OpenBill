@@ -1,12 +1,14 @@
-import { LogOut, Plus, Server, UserRound } from "lucide-react";
+import { LogOut, Plus, Server, Trash2, UserRound } from "lucide-react";
 import { useState } from "react";
 import type { LocalUser } from "../types/user";
+import { getUserDisplayName } from "../utils/users";
 
 interface UserSwitcherProps {
   activeUser: LocalUser;
   users: LocalUser[];
   onSwitchUser: (userId: string) => void;
   onCreateUser: (name: string) => boolean;
+  onDeleteUser: (userId: string) => void;
   onUseGuest: () => void;
   onOpenServerMode: () => void;
   error?: string;
@@ -17,6 +19,7 @@ export function UserSwitcher({
   users,
   onSwitchUser,
   onCreateUser,
+  onDeleteUser,
   onUseGuest,
   onOpenServerMode,
   error,
@@ -48,8 +51,7 @@ export function UserSwitcher({
             >
               {users.map((user) => (
                 <option key={user.id} value={user.id}>
-                  {user.name}
-                  {user.kind === "guest" ? "（游客）" : ""}
+                  {getUserDisplayName(user, users)}
                 </option>
               ))}
             </select>
@@ -108,6 +110,14 @@ export function UserSwitcher({
           >
             <LogOut size={16} aria-hidden="true" />
             重新选择
+          </button>
+          <button
+            className="inline-flex items-center gap-2 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50"
+            type="button"
+            onClick={() => onDeleteUser(activeUser.id)}
+          >
+            <Trash2 size={16} aria-hidden="true" />
+            删除当前用户
           </button>
         </div>
       </div>

@@ -1,6 +1,11 @@
-import { Cloud, Laptop, UserRound } from "lucide-react";
+import { Cloud, Laptop, Trash2, UserRound } from "lucide-react";
+import type { LocalUser } from "../types/user";
+import { getUserDisplayName } from "../utils/users";
 
 interface ModeSelectionProps {
+  users: LocalUser[];
+  onSelectUser: (userId: string) => void;
+  onDeleteUser: (userId: string) => void;
   onUseGuest: () => void;
   onCreateUser: (name: string) => boolean;
   onSelectServerMode: () => void;
@@ -8,6 +13,9 @@ interface ModeSelectionProps {
 }
 
 export function ModeSelection({
+  users,
+  onSelectUser,
+  onDeleteUser,
   onUseGuest,
   onCreateUser,
   onSelectServerMode,
@@ -51,6 +59,41 @@ export function ModeSelection({
             </div>
 
             <div className="space-y-4">
+              {users.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-slate-700">
+                    选择已有用户
+                  </p>
+                  <div className="max-h-56 space-y-2 overflow-auto pr-1">
+                    {users.map((user) => (
+                      <div
+                        key={user.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2"
+                      >
+                        <button
+                          className="min-w-0 flex-1 text-left text-sm font-medium text-slate-800 transition hover:text-teal-700"
+                          type="button"
+                          onClick={() => onSelectUser(user.id)}
+                        >
+                          <span className="block truncate">
+                            {getUserDisplayName(user, users)}
+                          </span>
+                        </button>
+                        <button
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-700"
+                          type="button"
+                          onClick={() => onDeleteUser(user.id)}
+                          aria-label={`删除用户 ${user.name}`}
+                          title="删除用户"
+                        >
+                          <Trash2 size={16} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <button
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-teal-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-teal-800"
                 type="button"

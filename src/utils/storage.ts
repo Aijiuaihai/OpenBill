@@ -195,21 +195,35 @@ export const clearActiveUser = async (): Promise<void> => {
   });
 };
 
-export const deleteUserData = async (userId: string): Promise<void> => {
+export const deleteUserData = async (
+  userId: string,
+): Promise<{ users: LocalUser[]; settings: AppSettings }> => {
+  if (isTauriRuntime()) {
+    return invoke("delete_user_data", { userId });
+  }
+
   const users = loadUsersFromLocalStorage().filter((user) => user.id !== userId);
   const byUser = loadTransactionsByUser();
   delete byUser[userId];
 
-  await saveUsers(users);
+  writeJson(USERS_KEY, users);
   writeJson(TRANSACTIONS_BY_USER_KEY, byUser);
 
-  const settings = await loadSettings();
-  if (settings.activeUserId === userId) {
-    await saveSettings({
-      ...settings,
-      activeUserId: users[0]?.id,
-    });
-  }
+  const currentSettings = await loadSettings();
+  const settings =
+    currentSettings.activeUserId === userId
+      ? {
+          ...currentSettings,
+          activeUserId: users[0]?.id,
+        }
+      : currentSettings;
+
+  await saveSettings(settings);
+
+  return {
+    users,
+    settings,
+  };
 };
 
 const exportBackupFromLocalStorage = (): OpenBillBackup => ({

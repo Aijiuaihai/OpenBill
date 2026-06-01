@@ -12,6 +12,7 @@ import type { OpenBillBackup } from "./types/backup";
 import type { AppSettings, LocalUser, StorageMode } from "./types/user";
 import {
   exportBackup,
+  deleteUserData,
   getStorageBackend,
   importBackup,
   loadSettings,
@@ -244,6 +245,28 @@ function App() {
     activateLocalMode(userId);
   };
 
+  const deleteUser = async (userId: string) => {
+    const targetUser = users.find((user) => user.id === userId);
+    const confirmed = window.confirm(
+      `确认删除${targetUser ? `「${targetUser.name}」` : "该用户"}吗？该用户的账单也会被删除。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const result = await deleteUserData(userId);
+    setUsers(result.users);
+    setSettings(result.settings);
+    setUserError("");
+    if (result.settings.activeUserId) {
+      setTransactions(await loadTransactions(result.settings.activeUserId));
+      setLoadedUserId(result.settings.activeUserId);
+    } else {
+      setTransactions([]);
+      setLoadedUserId(null);
+    }
+  };
+
   const handleImportBackup = async (backup: OpenBillBackup) => {
     await importBackup(backup);
     await reloadStore();
@@ -281,6 +304,13 @@ function App() {
     return (
       <div className="min-h-screen bg-[#f7f5f0] text-slate-900">
         <ModeSelection
+          users={users}
+          onSelectUser={activateLocalMode}
+          onDeleteUser={(userId) => {
+            deleteUser(userId).catch((error) => {
+              console.error("Failed to delete user", error);
+            });
+          }}
           onUseGuest={useGuest}
           onCreateUser={(name) => createUser(name)}
           onSelectServerMode={() => setSettings({ mode: "server" })}
@@ -331,6 +361,11 @@ function App() {
           users={users}
           onSwitchUser={switchUser}
           onCreateUser={(name) => createUser(name)}
+          onDeleteUser={(userId) => {
+            deleteUser(userId).catch((error) => {
+              console.error("Failed to delete user", error);
+            });
+          }}
           onUseGuest={useGuest}
           onOpenServerMode={() =>
             setSettings({

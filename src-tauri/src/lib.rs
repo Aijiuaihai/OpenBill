@@ -46,6 +46,13 @@ struct Backup {
     transactions_by_user: std::collections::HashMap<String, Vec<Transaction>>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteUserResult {
+    users: Vec<LocalUser>,
+    settings: AppSettings,
+}
+
 fn database_path(app: &AppHandle) -> Result<PathBuf, String> {
     let app_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
     fs::create_dir_all(&app_dir).map_err(|error| error.to_string())?;
@@ -459,6 +466,74 @@ fn import_backup(app: AppHandle, backup: Backup) -> Result<(), String> {
     tx.commit().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn delete_user_data(app: AppHandle, user_id: String) -> Result<DeleteUserResult, String> {
+    let mut conn = connection(&app)?;
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+
+    tx.execute("DELETE FROM transactions WHERE user_id = ?1", params![&user_id])
+        .map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM users WHERE id = ?1", params![&user_id])
+        .map_err(|error| error.to_string())?;
+
+    let raw_settings = tx
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'app'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+
+    let mut settings = match raw_settings {
+        Some(value) => serde_json::from_str::<AppSettings>(&value).map_err(|error| error.to_string())?,
+        None => AppSettings::default(),
+    };
+
+    let mut statement = tx
+        .prepare(
+            "
+            SELECT id, name, kind, created_at, updated_at
+            FROM users
+            ORDER BY created_at ASC
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    let users = statement
+        .query_map([], |row| {
+            Ok(LocalUser {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                kind: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    if settings.active_user_id.as_deref() == Some(user_id.as_str()) {
+        settings.active_user_id = users.first().map(|user| user.id.clone());
+    }
+
+    let settings_value = serde_json::to_string(&settings).map_err(|error| error.to_string())?;
+    tx.execute(
+        "
+        INSERT INTO settings (key, value)
+        VALUES ('app', ?1)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        ",
+        params![settings_value],
+    )
+    .map_err(|error| error.to_string())?;
+
+    drop(statement);
+    tx.commit().map_err(|error| error.to_string())?;
+
+    Ok(DeleteUserResult { users, settings })
+}
+
 fn chrono_like_timestamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -480,7 +555,8 @@ pub fn run() {
             load_transactions,
             save_transactions,
             export_backup,
-            import_backup
+            import_backup,
+            delete_user_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenBill");
