@@ -6,6 +6,7 @@ import { TransactionList } from "../components/TransactionList";
 import {
   getExpenseStatsByChannel,
   getSummaryStats,
+  resolveStatisticsRange,
   sortTransactionsByDate,
 } from "../utils/statistics";
 import { getCurrentMonthKey } from "../utils/format";
@@ -21,11 +22,27 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const monthKey = getCurrentMonthKey();
   const stats = getSummaryStats(transactions, monthKey);
+  const currentMonthRange = resolveStatisticsRange(
+    transactions,
+    {
+      mode: "current_month",
+      month: monthKey,
+      startMonth: monthKey,
+      endMonth: monthKey,
+    },
+    monthKey,
+  );
   const recentTransactions = sortTransactionsByDate(transactions).slice(0, 5);
-  const channelStats = getExpenseStatsByChannel(transactions, CHANNEL_LABELS);
+  const channelStats = getExpenseStatsByChannel(
+    currentMonthRange.transactions,
+    CHANNEL_LABELS,
+  );
 
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-soft">
+        首页按系统时间自动显示 {currentMonthRange.label} 的收入、支出和渠道支出。
+      </div>
       <SummaryCards stats={stats} />
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">

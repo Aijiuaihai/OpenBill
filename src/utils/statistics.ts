@@ -21,6 +21,26 @@ export interface SummaryStats {
   monthBalance: number;
 }
 
+export interface PeriodSummaryStats {
+  income: number;
+  expense: number;
+  balance: number;
+}
+
+export type StatisticsRangeMode = "current_month" | "month" | "month_range" | "all";
+
+export interface StatisticsRange {
+  mode: StatisticsRangeMode;
+  month: string;
+  startMonth: string;
+  endMonth: string;
+}
+
+export interface ResolvedStatisticsRange {
+  label: string;
+  transactions: Transaction[];
+}
+
 export const sortTransactionsByDate = (
   transactions: Transaction[],
 ): Transaction[] =>
@@ -83,6 +103,68 @@ export const getSummaryStats = (
   };
 };
 
+export const getPeriodSummaryStats = (
+  transactions: Transaction[],
+): PeriodSummaryStats => {
+  const income = sumByType(transactions, "income");
+  const expense = sumByType(transactions, "expense");
+
+  return {
+    income,
+    expense,
+    balance: income - expense,
+  };
+};
+
+export const getMonthOptions = (transactions: Transaction[]): string[] => {
+  const monthSet = new Set<string>();
+  for (const transaction of transactions) {
+    if (transaction.date.length >= 7) {
+      monthSet.add(transaction.date.slice(0, 7));
+    }
+  }
+
+  return Array.from(monthSet).sort((a, b) => b.localeCompare(a));
+};
+
+export const resolveStatisticsRange = (
+  transactions: Transaction[],
+  range: StatisticsRange,
+  currentMonth: string,
+): ResolvedStatisticsRange => {
+  if (range.mode === "all") {
+    return {
+      label: "全部",
+      transactions,
+    };
+  }
+
+  if (range.mode === "month_range") {
+    const startMonth = range.startMonth || currentMonth;
+    const endMonth = range.endMonth || startMonth;
+    const normalizedStart = startMonth <= endMonth ? startMonth : endMonth;
+    const normalizedEnd = startMonth <= endMonth ? endMonth : startMonth;
+
+    return {
+      label:
+        normalizedStart === normalizedEnd
+          ? formatMonthLabel(normalizedStart)
+          : `${formatMonthLabel(normalizedStart)} 至 ${formatMonthLabel(normalizedEnd)}`,
+      transactions: transactions.filter((transaction) => {
+        const month = transaction.date.slice(0, 7);
+        return month >= normalizedStart && month <= normalizedEnd;
+      }),
+    };
+  }
+
+  const month = range.mode === "current_month" ? currentMonth : range.month || currentMonth;
+
+  return {
+    label: range.mode === "current_month" ? `本月（${formatMonthLabel(month)}）` : formatMonthLabel(month),
+    transactions: transactions.filter((transaction) => transaction.date.startsWith(month)),
+  };
+};
+
 export const getExpenseStatsByChannel = (
   transactions: Transaction[],
   labels: Record<Channel, string>,
@@ -101,6 +183,15 @@ const sumByType = (
   transactions
     .filter((transaction) => transaction.type === type)
     .reduce((sum, transaction) => sum + transaction.amount, 0);
+
+const formatMonthLabel = (month: string): string => {
+  const [year, monthNumber] = month.split("-");
+  if (!year || !monthNumber) {
+    return month;
+  }
+
+  return `${year}年${Number(monthNumber)}月`;
+};
 
 const getExpenseStats = (
   transactions: Transaction[],
