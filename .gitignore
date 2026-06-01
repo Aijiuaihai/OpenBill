@@ -13,6 +13,7 @@ pnpm-debug.log*
 .npm-cache/
 .npm-dev*.log
 src-tauri/target/
+src-tauri/gen/
 *.sqlite
 *.sqlite3
 *.db
